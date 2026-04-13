@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mac Autopilot</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        max-width: 840px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+
+      textarea {
+        width: 100%;
+        min-height: 280px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+
+      .status {
+        margin: 1rem 0;
+        padding: 0.75rem;
+        border-radius: 8px;
+        background: #f6f8fa;
+      }
+
+      button {
+        padding: 0.6rem 1rem;
+        cursor: pointer;
+      }
+
+      pre {
+        background: #f6f8fa;
+        padding: 0.75rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Mac Autopilot</h1>
+    <p>
+      Steuerungssprache (eine Aktion pro Zeile):
+      <code>move x y</code>, <code>click [left|right]</code>, <code>doubleclick</code>,
+      <code>type text</code>, <code>hotkey cmd space</code>, <code>wait sekunden</code>.
+    </p>
+
+    <div id="status" class="status">Status wird geladen…</div>
+
+    <textarea id="instructions">move 500 400
+click
+type Hallo von Mac Autopilot
+wait 1
+hotkey cmd space
+type Notizen
+click
+</textarea>
+    <br />
+    <button id="submitBtn">Auftrag senden</button>
+
+    <h3>Server-Antwort</h3>
+    <pre id="response">-</pre>
+
+    <script>
+      async function loadStatus() {
+        const target = document.getElementById("status");
+        try {
+          const res = await fetch("/status");
+          const data = await res.json();
+
+          if (data.paused) {
+            target.textContent = `⏸️ Pausiert (noch ${data.pause_seconds_remaining}s) – Maus wurde manuell bewegt.`;
+          } else {
+            target.textContent = `✅ Aktiv – Warteschlange: ${data.queued_jobs}`;
+          }
+        } catch (e) {
+          target.textContent = `Status nicht verfügbar: ${e}`;
+        }
+      }
+
+      async function submitInstructions() {
+        const instructions = document.getElementById("instructions").value;
+        const output = document.getElementById("response");
+
+        const res = await fetch("/submit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ instructions }),
+        });
+        const data = await res.json();
+        output.textContent = JSON.stringify(data, null, 2);
+        loadStatus();
+      }
+
+      document.getElementById("submitBtn").addEventListener("click", submitInstructions);
+      loadStatus();
+      setInterval(loadStatus, 1000);
+    </script>
+  </body>
+</html>
