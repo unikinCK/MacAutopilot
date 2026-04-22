@@ -16,6 +16,7 @@ app = Flask(__name__)
 class AutomationState:
     paused_until: float = 0.0
     last_automation_move_ts: float = 0.0
+    suppress_pause_until: float = 0.0
     queue_size: int = 0
     worker_alive: bool = False
     mouse_listener_alive: bool = False
@@ -109,7 +110,10 @@ def perform_action(action: dict[str, Any]) -> None:
     if kind == "move":
         with state_lock:
             state.last_automation_move_ts = time.time()
+            state.suppress_pause_until = time.time() + 1.0
         pyautogui.moveTo(action["x"], action["y"], duration=0.15)
+        with state_lock:
+            state.suppress_pause_until = max(state.suppress_pause_until, time.time() + 0.5)
     elif kind == "click":
         pyautogui.click(button=action.get("button", "left"))
     elif kind == "doubleclick":
@@ -180,6 +184,8 @@ def on_mouse_move(x: int, y: int) -> None:
     del x, y
     now = time.time()
     with state_lock:
+        if now < state.suppress_pause_until:
+            return
         recently_automated = now - state.last_automation_move_ts < 0.3
         if recently_automated:
             return
