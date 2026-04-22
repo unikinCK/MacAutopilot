@@ -24,6 +24,8 @@ class AutomationState:
 state = AutomationState()
 command_queue: queue.Queue[list[dict[str, Any]]] = queue.Queue()
 state_lock = threading.Lock()
+startup_lock = threading.Lock()
+startup_complete = False
 
 
 pyautogui.FAILSAFE = True
@@ -103,6 +105,18 @@ def worker() -> None:
         command_queue.task_done()
 
 
+def start_background_services() -> None:
+    global startup_complete
+
+    with startup_lock:
+        if startup_complete:
+            return
+
+        threading.Thread(target=worker, daemon=True).start()
+        start_mouse_listener()
+        startup_complete = True
+
+
 def on_mouse_move(x: int, y: int) -> None:
     del x, y
     now = time.time()
@@ -121,11 +135,13 @@ def start_mouse_listener() -> None:
 
 @app.get("/")
 def index() -> str:
+    start_background_services()
     return render_template("index.html")
 
 
 @app.get("/status")
 def status() -> Any:
+    start_background_services()
     with state_lock:
         paused = state.is_paused()
         remaining = max(0.0, state.paused_until - time.time())
@@ -141,6 +157,7 @@ def status() -> Any:
 
 @app.post("/submit")
 def submit() -> Any:
+    start_background_services()
     payload = request.get_json(silent=True) or {}
     instructions = payload.get("instructions", "")
 
@@ -159,6 +176,5 @@ def submit() -> Any:
 
 
 if __name__ == "__main__":
-    threading.Thread(target=worker, daemon=True).start()
-    start_mouse_listener()
+    start_background_services()
     app.run(host="0.0.0.0", port=8000)
