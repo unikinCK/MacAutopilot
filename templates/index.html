@@ -59,10 +59,13 @@ click
 
     <h3>Server-Antwort</h3>
     <pre id="response">-</pre>
+    <h3>Debug-Infos</h3>
+    <pre id="debug">-</pre>
 
     <script>
       async function loadStatus() {
         const target = document.getElementById("status");
+        const debugTarget = document.getElementById("debug");
         try {
           const res = await fetch("/status");
           const data = await res.json();
@@ -72,8 +75,25 @@ click
           } else {
             target.textContent = `✅ Aktiv – Warteschlange: ${data.queued_jobs}`;
           }
+
+          debugTarget.textContent = JSON.stringify(
+            {
+              paused: data.paused,
+              pause_seconds_remaining: data.pause_seconds_remaining,
+              queued_jobs: data.queued_jobs,
+              worker_alive: data.worker_alive,
+              mouse_listener_alive: data.mouse_listener_alive,
+              current_job_id: data.current_job_id,
+              processed_actions_total: data.processed_actions_total,
+              last_error: data.last_error,
+              recent_events: data.recent_events,
+            },
+            null,
+            2,
+          );
         } catch (e) {
           target.textContent = `Status nicht verfügbar: ${e}`;
+          debugTarget.textContent = `Fehler beim Laden der Debug-Infos: ${e}`;
         }
       }
 
