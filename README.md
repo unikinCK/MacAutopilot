@@ -50,6 +50,8 @@ Eine Aktion pro Zeile:
 - `hotkey cmd space`
 - `wait 1.5`
 
+Hinweis: Bei `hotkey` werden gängige Aliase normalisiert, z. B. `cmd` → `command`, `option` → `alt`, `return` → `enter`.
+
 ## API
 
 ### `POST /submit`
