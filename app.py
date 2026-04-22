@@ -50,6 +50,22 @@ pyautogui.FAILSAFE = True
 pyautogui.PAUSE = 0.05
 
 
+def normalize_hotkey_key(key: str) -> str:
+    normalized = key.strip().lower()
+    aliases = {
+        "cmd": "command",
+        "⌘": "command",
+        "strg": "ctrl",
+        "steuerung": "ctrl",
+        "ctrlleft": "ctrl",
+        "ctrlright": "ctrl",
+        "option": "alt",
+        "opt": "alt",
+        "return": "enter",
+    }
+    return aliases.get(normalized, normalized)
+
+
 def parse_instructions(raw_text: str) -> list[dict[str, Any]]:
     actions: list[dict[str, Any]] = []
     lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
@@ -70,7 +86,12 @@ def parse_instructions(raw_text: str) -> list[dict[str, Any]]:
                 text = line[len("type") :].strip()
                 actions.append({"action": "type", "text": text})
             elif command == "hotkey" and len(parts) >= 2:
-                actions.append({"action": "hotkey", "keys": [k.lower() for k in parts[1:]]})
+                actions.append(
+                    {
+                        "action": "hotkey",
+                        "keys": [normalize_hotkey_key(k) for k in parts[1:]],
+                    }
+                )
             elif command == "wait" and len(parts) >= 2:
                 actions.append({"action": "wait", "seconds": float(parts[1])})
             else:
