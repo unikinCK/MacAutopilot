@@ -278,6 +278,20 @@ def start_mouse_listener() -> None:
     push_debug_event("mouse_listener_started")
 
 
+
+
+def build_inspection_prompt(user_prompt: str) -> str:
+    base_prompt = user_prompt.strip()
+    coordinate_schema = (
+        "\n\nZusatzanforderung (verpflichtend): Liefere die Antwort als JSON mit diesem Schema:\n"
+        '{"screen_summary":"string","action_targets":[{"name":"string","type":"button|input|menu|link|other",'
+        '"x":0,"y":0,"confidence":0.0,"reason":"string"}],"ocr_texts":["string"]}\n'
+        "Regeln: (1) x/y sind Pixelkoordinaten im Screenshotzentrum des anklickbaren Bereichs, "
+        "(2) nur sichtbare und wahrscheinlich interaktive Elemente nennen, "
+        "(3) maximal 12 action_targets, (4) keine Ausgabe außerhalb des JSON."
+    )
+    return f"{base_prompt}{coordinate_schema}"
+
 def analyze_screenshot_with_llm(prompt: str) -> dict[str, Any]:
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").strip().rstrip("/")
@@ -618,15 +632,15 @@ def inspect_screen() -> Any:
     prompt = payload.get(
         "prompt",
         (
-            "Beschreibe prägnant, welche Bedienelemente sichtbar sind "
-            "(Buttons, Eingabefelder, Menüs, etc.) und welche Texte im Screenshot stehen."
+            "Beschreibe prägnant sichtbare, interaktive Bedienelemente "
+            "(Buttons, Eingabefelder, Menüs, etc.) samt Koordinaten für mögliche Aktionen."
         ),
     )
     if not isinstance(prompt, str) or not prompt.strip():
         return jsonify({"ok": False, "error": "Prompt darf nicht leer sein."}), 400
 
     try:
-        result = analyze_screenshot_with_llm(prompt.strip())
+        result = analyze_screenshot_with_llm(build_inspection_prompt(prompt))
     except ValueError as exc:
         push_debug_event("inspect_screen_config_error", error=str(exc))
         return jsonify({"ok": False, "error": str(exc)}), 400
