@@ -216,9 +216,6 @@ def analyze_screenshot_with_llm(prompt: str) -> dict[str, Any]:
     base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").strip().rstrip("/")
     model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini").strip()
 
-    if not api_key:
-        raise ValueError("OPENAI_API_KEY fehlt.")
-
     screenshot_image = pyautogui.screenshot()
     image_buffer = io.BytesIO()
     screenshot_image.save(image_buffer, format="PNG")
@@ -238,12 +235,15 @@ def analyze_screenshot_with_llm(prompt: str) -> dict[str, Any]:
         ],
     }
 
+    headers = {
+        "Content-Type": "application/json",
+    }
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
     response = requests.post(
         f"{base_url}/chat/completions",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
+        headers=headers,
         json=body,
         timeout=60,
     )

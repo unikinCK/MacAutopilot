@@ -34,8 +34,8 @@ pip install -r requirements.txt
 
 ```bash
 source .venv/bin/activate
-export OPENAI_API_KEY="..."
 # optional:
+# export OPENAI_API_KEY="..."
 # export OPENAI_BASE_URL="https://api.openai.com/v1"
 # export OPENAI_MODEL="gpt-4.1-mini"
 python app.py
