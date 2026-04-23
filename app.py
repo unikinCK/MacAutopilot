@@ -1,11 +1,15 @@
 import queue
 import threading
 import time
+import os
+import base64
+import io
 from collections import deque
 from dataclasses import dataclass
 from typing import Any
 
 import pyautogui
+import requests
 from flask import Flask, jsonify, render_template, request
 from pynput import mouse
 
@@ -202,6 +206,57 @@ def start_mouse_listener() -> None:
     push_debug_event("mouse_listener_started")
 
 
+def analyze_screenshot_with_llm(prompt: str) -> dict[str, Any]:
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").strip().rstrip("/")
+    model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini").strip()
+
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY fehlt.")
+
+    screenshot_image = pyautogui.screenshot()
+    image_buffer = io.BytesIO()
+    screenshot_image.save(image_buffer, format="PNG")
+    image_b64 = base64.b64encode(image_buffer.getvalue()).decode("utf-8")
+    image_url = f"data:image/png;base64,{image_b64}"
+
+    body = {
+        "model": model,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": image_url}},
+                ],
+            }
+        ],
+    }
+
+    response = requests.post(
+        f"{base_url}/chat/completions",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        json=body,
+        timeout=60,
+    )
+    response.raise_for_status()
+    data = response.json()
+
+    content = ""
+    choices = data.get("choices", [])
+    if choices:
+        content = choices[0].get("message", {}).get("content", "")
+
+    return {
+        "model": model,
+        "analysis": content,
+        "usage": data.get("usage"),
+    }
+
+
 @app.get("/")
 def index() -> str:
     start_background_services()
@@ -255,6 +310,36 @@ def submit() -> Any:
         state.queue_size = command_queue.qsize()
     push_debug_event("submit_ok", actions_count=len(actions), queue_size=command_queue.qsize())
     return jsonify({"ok": True, "accepted_actions": len(actions)})
+
+
+@app.post("/inspect-screen")
+def inspect_screen() -> Any:
+    start_background_services()
+    payload = request.get_json(silent=True) or {}
+    prompt = payload.get(
+        "prompt",
+        (
+            "Beschreibe prägnant, welche Bedienelemente sichtbar sind "
+            "(Buttons, Eingabefelder, Menüs, etc.) und welche Texte im Screenshot stehen."
+        ),
+    )
+    if not isinstance(prompt, str) or not prompt.strip():
+        return jsonify({"ok": False, "error": "Prompt darf nicht leer sein."}), 400
+
+    try:
+        result = analyze_screenshot_with_llm(prompt.strip())
+    except ValueError as exc:
+        push_debug_event("inspect_screen_config_error", error=str(exc))
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except requests.RequestException as exc:
+        push_debug_event("inspect_screen_request_error", error=str(exc))
+        return jsonify({"ok": False, "error": f"LLM-Aufruf fehlgeschlagen: {exc}"}), 502
+    except Exception as exc:
+        push_debug_event("inspect_screen_error", error=str(exc))
+        return jsonify({"ok": False, "error": f"Interner Fehler: {exc}"}), 500
+
+    push_debug_event("inspect_screen_ok", model=result["model"])
+    return jsonify({"ok": True, **result})
 
 
 if __name__ == "__main__":
