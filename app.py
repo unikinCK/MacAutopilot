@@ -1,3 +1,5 @@
+import dotenv
+
 import queue
 import threading
 import time
@@ -13,6 +15,8 @@ import requests
 from flask import Flask, jsonify, render_template, request
 from pynput import mouse
 
+dotenv.load_dotenv()
+print(os.getenv("OPENAI_BASE_URL", "nicht gesetzt"))
 app = Flask(__name__)
 
 
