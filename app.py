@@ -90,6 +90,59 @@ def normalize_hotkey_key(key: str) -> str:
     return aliases.get(normalized, normalized)
 
 
+def extract_text_from_llm_response(data: dict[str, Any]) -> str:
+    direct_text = data.get("output_text")
+    if isinstance(direct_text, str) and direct_text.strip():
+        return direct_text.strip()
+
+    output = data.get("output")
+    if isinstance(output, list):
+        fragments: list[str] = []
+        for item in output:
+            if not isinstance(item, dict):
+                continue
+            content = item.get("content")
+            if not isinstance(content, list):
+                continue
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                text_value = block.get("text")
+                if isinstance(text_value, str) and text_value.strip():
+                    fragments.append(text_value.strip())
+        if fragments:
+            return "\n".join(fragments).strip()
+
+    choices = data.get("choices")
+    if isinstance(choices, list) and choices:
+        message = choices[0].get("message", {})
+        content = message.get("content", "")
+        if isinstance(content, str):
+            return content.strip()
+        if isinstance(content, list):
+            parts: list[str] = []
+            for part in content:
+                if not isinstance(part, dict):
+                    continue
+                text_value = part.get("text")
+                if isinstance(text_value, str) and text_value.strip():
+                    parts.append(text_value.strip())
+            if parts:
+                return "\n".join(parts).strip()
+
+    return ""
+
+
+def extract_json_object_text(text: str) -> str:
+    json_text = text.strip()
+    if "```" in json_text:
+        start = json_text.find("{")
+        end = json_text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            return json_text[start : end + 1]
+    return json_text
+
+
 def parse_instructions(raw_text: str) -> list[dict[str, Any]]:
     actions: list[dict[str, Any]] = []
     lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
@@ -287,11 +340,7 @@ def analyze_screenshot_with_llm(prompt: str) -> dict[str, Any]:
     response.raise_for_status()
     data = response.json()
 
-    content = str(data.get("output_text", "")).strip()
-    if not content:
-        choices = data.get("choices", [])
-        if choices:
-            content = choices[0].get("message", {}).get("content", "")
+    content = extract_text_from_llm_response(data)
 
     return {
         "model": model,
@@ -425,18 +474,8 @@ def plan_actions_with_llm(goal: str) -> dict[str, Any]:
     response.raise_for_status()
     data = response.json()
 
-    content = str(data.get("output_text", "")).strip()
-    if not content:
-        choices = data.get("choices", [])
-        if choices:
-            content = choices[0].get("message", {}).get("content", "")
-
-    json_text = content.strip()
-    if "```" in json_text:
-        start = json_text.find("{")
-        end = json_text.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            json_text = json_text[start : end + 1]
+    content = extract_text_from_llm_response(data)
+    json_text = extract_json_object_text(content)
 
     parsed = json.loads(json_text)
     cleaned_actions = sanitize_actions(parsed.get("actions"))
