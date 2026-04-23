@@ -7,6 +7,7 @@ import os
 import base64
 import io
 import json
+from http import HTTPStatus
 from collections import deque
 from dataclasses import dataclass
 from typing import Any
@@ -235,38 +236,62 @@ def analyze_screenshot_with_llm(prompt: str) -> dict[str, Any]:
     image_b64 = base64.b64encode(image_buffer.getvalue()).decode("utf-8")
     image_url = f"data:image/png;base64,{image_b64}"
 
-    body = {
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    response_body = {
         "model": model,
-        "messages": [
+        "input": [
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": image_url}},
+                    {"type": "input_text", "text": prompt},
+                    {"type": "input_image", "image_url": image_url},
                 ],
             }
         ],
     }
 
-    headers = {
-        "Content-Type": "application/json",
-    }
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-
     response = requests.post(
-        f"{base_url}/chat/completions",
+        f"{base_url}/responses",
         headers=headers,
-        json=body,
+        json=response_body,
         timeout=60,
     )
+
+    if response.status_code in {
+        HTTPStatus.NOT_FOUND,
+        HTTPStatus.BAD_REQUEST,
+        HTTPStatus.METHOD_NOT_ALLOWED,
+    }:
+        chat_body = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": image_url}},
+                    ],
+                }
+            ],
+        }
+        response = requests.post(
+            f"{base_url}/chat/completions",
+            headers=headers,
+            json=chat_body,
+            timeout=60,
+        )
+
     response.raise_for_status()
     data = response.json()
 
-    content = ""
-    choices = data.get("choices", [])
-    if choices:
-        content = choices[0].get("message", {}).get("content", "")
+    content = str(data.get("output_text", "")).strip()
+    if not content:
+        choices = data.get("choices", [])
+        if choices:
+            content = choices[0].get("message", {}).get("content", "")
 
     return {
         "model": model,
@@ -321,69 +346,90 @@ def plan_actions_with_llm(goal: str) -> dict[str, Any]:
     base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").strip().rstrip("/")
     model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini").strip()
 
-    if not api_key:
-        raise ValueError("OPENAI_API_KEY fehlt.")
-
     screenshot_image = take_screenshot()
     image_buffer = io.BytesIO()
     screenshot_image.save(image_buffer, format="PNG")
     image_b64 = base64.b64encode(image_buffer.getvalue()).decode("utf-8")
     image_url = f"data:image/png;base64,{image_b64}"
 
-    body = {
-        "model": model,
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "Du bist ein Desktop-Automationsplaner. Nutze den Screenshot als Kontext "
-                    "und gib NUR JSON zurück."
-                ),
-            },
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": (
-                            "Erstelle einen kurzen Plan und konkrete UI-Aktionen, um folgendes Ziel zu erreichen:\n"
-                            f"{goal}\n\n"
-                            "Antworte NUR als JSON mit diesem Schema:\n"
-                            '{'
-                            '"plan_summary": "string",'
-                            '"actions":[{"action":"move","x":0,"y":0}|'
-                            '{"action":"click","button":"left"}|'
-                            '{"action":"doubleclick"}|'
-                            '{"action":"type","text":"..."}|'
-                            '{"action":"hotkey","keys":["command","space"]}|'
-                            '{"action":"wait","seconds":1.0}],'
-                            '"notes":"string"'
-                            "}\n"
-                            "Regeln: maximal 15 Aktionen, nur sichtbare UI verwenden, keine Erklärtexte außerhalb von JSON."
-                        ),
-                    },
-                    {"type": "image_url", "image_url": {"url": image_url}},
-                ],
-            }
-        ],
-    }
+    prompt_text = (
+        "Erstelle einen kurzen Plan und konkrete UI-Aktionen, um folgendes Ziel zu erreichen:\n"
+        f"{goal}\n\n"
+        "Antworte NUR als JSON mit diesem Schema:\n"
+        '{'
+        '"plan_summary": "string",'
+        '"actions":[{"action":"move","x":0,"y":0}|'
+        '{"action":"click","button":"left"}|'
+        '{"action":"doubleclick"}|'
+        '{"action":"type","text":"..."}|'
+        '{"action":"hotkey","keys":["command","space"]}|'
+        '{"action":"wait","seconds":1.0}],'
+        '"notes":"string"'
+        "}\n"
+        "Regeln: maximal 15 Aktionen, nur sichtbare UI verwenden, keine Erklärtexte außerhalb von JSON."
+    )
+
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
 
     response = requests.post(
-        f"{base_url}/chat/completions",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
+        f"{base_url}/responses",
+        headers=headers,
+        json={
+            "model": model,
+            "instructions": "Du bist ein Desktop-Automationsplaner. Nutze den Screenshot als Kontext und gib NUR JSON zurück.",
+            "input": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": prompt_text},
+                        {"type": "input_image", "image_url": image_url},
+                    ],
+                }
+            ],
         },
-        json=body,
         timeout=60,
     )
+
+    if response.status_code in {
+        HTTPStatus.NOT_FOUND,
+        HTTPStatus.BAD_REQUEST,
+        HTTPStatus.METHOD_NOT_ALLOWED,
+    }:
+        response = requests.post(
+            f"{base_url}/chat/completions",
+            headers=headers,
+            json={
+                "model": model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "Du bist ein Desktop-Automationsplaner. Nutze den Screenshot als Kontext und gib NUR JSON zurück.",
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": prompt_text,
+                            },
+                            {"type": "image_url", "image_url": {"url": image_url}},
+                        ],
+                    },
+                ],
+            },
+            timeout=60,
+        )
+
     response.raise_for_status()
     data = response.json()
 
-    content = ""
-    choices = data.get("choices", [])
-    if choices:
-        content = choices[0].get("message", {}).get("content", "")
+    content = str(data.get("output_text", "")).strip()
+    if not content:
+        choices = data.get("choices", [])
+        if choices:
+            content = choices[0].get("message", {}).get("content", "")
 
     json_text = content.strip()
     if "```" in json_text:
@@ -422,6 +468,53 @@ def actions_to_instructions(actions: list[dict[str, Any]]) -> str:
         elif kind == "wait":
             lines.append(f"wait {action['seconds']}")
     return "\n".join(lines)
+
+
+def get_proxy_headers() -> dict[str, str]:
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    return headers
+
+
+@app.get("/v1/models")
+def proxy_models() -> Any:
+    base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").strip().rstrip("/")
+    response = requests.get(f"{base_url}/models", headers=get_proxy_headers(), timeout=30)
+    return jsonify(response.json()), response.status_code
+
+
+def proxy_post(endpoint: str) -> Any:
+    base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").strip().rstrip("/")
+    payload = request.get_json(silent=True) or {}
+    response = requests.post(
+        f"{base_url}/{endpoint}",
+        headers=get_proxy_headers(),
+        json=payload,
+        timeout=60,
+    )
+    return jsonify(response.json()), response.status_code
+
+
+@app.post("/v1/responses")
+def proxy_responses() -> Any:
+    return proxy_post("responses")
+
+
+@app.post("/v1/chat/completions")
+def proxy_chat_completions() -> Any:
+    return proxy_post("chat/completions")
+
+
+@app.post("/v1/completions")
+def proxy_completions() -> Any:
+    return proxy_post("completions")
+
+
+@app.post("/v1/embeddings")
+def proxy_embeddings() -> Any:
+    return proxy_post("embeddings")
 
 
 @app.get("/")
