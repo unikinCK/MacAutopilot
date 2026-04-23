@@ -32,6 +32,10 @@ pip install -r requirements.txt
 
 ```bash
 source .venv/bin/activate
+export OPENAI_API_KEY="..."
+# optional:
+# export OPENAI_BASE_URL="https://api.openai.com/v1"
+# export OPENAI_MODEL="gpt-4.1-mini"
 python app.py
 ```
 
@@ -71,5 +75,28 @@ Beispiel:
   "paused": false,
   "pause_seconds_remaining": 0.0,
   "queued_jobs": 0
+}
+```
+
+### `POST /inspect-screen`
+
+Macht einen Screenshot des aktuellen Bildschirms und schickt ihn an ein OpenAI-kompatibles Vision-LLM.
+
+Request:
+
+```json
+{
+  "prompt": "Welche Bedienelemente und Texte sind zu sehen?"
+}
+```
+
+Response (gekürzt):
+
+```json
+{
+  "ok": true,
+  "model": "gpt-4.1-mini",
+  "analysis": "Ich sehe ...",
+  "usage": { "prompt_tokens": 123, "completion_tokens": 45, "total_tokens": 168 }
 }
 ```

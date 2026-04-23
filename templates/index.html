@@ -56,6 +56,17 @@ click
 </textarea>
     <br />
     <button id="submitBtn">Auftrag senden</button>
+    <button id="inspectBtn">Screen analysieren</button>
+
+    <p>
+      Analyse-Prompt für das LLM:
+      <input
+        id="inspectPrompt"
+        type="text"
+        style="width: 100%"
+        value="Welche Bedienelemente und Texte sind zu sehen?"
+      />
+    </p>
 
     <h3>Server-Antwort</h3>
     <pre id="response">-</pre>
@@ -111,7 +122,21 @@ click
         loadStatus();
       }
 
+      async function inspectScreen() {
+        const prompt = document.getElementById("inspectPrompt").value;
+        const output = document.getElementById("response");
+
+        const res = await fetch("/inspect-screen", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt }),
+        });
+        const data = await res.json();
+        output.textContent = JSON.stringify(data, null, 2);
+      }
+
       document.getElementById("submitBtn").addEventListener("click", submitInstructions);
+      document.getElementById("inspectBtn").addEventListener("click", inspectScreen);
       loadStatus();
       setInterval(loadStatus, 1000);
     </script>
