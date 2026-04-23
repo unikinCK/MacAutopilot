@@ -4,6 +4,7 @@ import time
 import os
 import base64
 import io
+import json
 from collections import deque
 from dataclasses import dataclass
 from typing import Any
@@ -257,6 +258,155 @@ def analyze_screenshot_with_llm(prompt: str) -> dict[str, Any]:
     }
 
 
+def sanitize_actions(actions: Any) -> list[dict[str, Any]]:
+    if not isinstance(actions, list) or not actions:
+        raise ValueError("Das LLM hat keine gültigen Aktionen geliefert.")
+
+    cleaned: list[dict[str, Any]] = []
+    for idx, item in enumerate(actions, start=1):
+        if not isinstance(item, dict):
+            raise ValueError(f"Aktion {idx} ist kein Objekt.")
+
+        action = str(item.get("action", "")).strip().lower()
+        if action == "move":
+            cleaned.append(
+                {
+                    "action": "move",
+                    "x": int(item["x"]),
+                    "y": int(item["y"]),
+                }
+            )
+        elif action == "click":
+            button = str(item.get("button", "left")).strip().lower()
+            if button not in {"left", "right", "middle"}:
+                raise ValueError(f"Ungültiger Button in Aktion {idx}: {button}")
+            cleaned.append({"action": "click", "button": button})
+        elif action == "doubleclick":
+            cleaned.append({"action": "doubleclick"})
+        elif action == "type":
+            cleaned.append({"action": "type", "text": str(item.get("text", ""))})
+        elif action == "hotkey":
+            keys_raw = item.get("keys", [])
+            if not isinstance(keys_raw, list) or not keys_raw:
+                raise ValueError(f"Aktion {idx} hat keine gültigen Hotkeys.")
+            keys = [normalize_hotkey_key(str(key)) for key in keys_raw]
+            cleaned.append({"action": "hotkey", "keys": keys})
+        elif action == "wait":
+            cleaned.append({"action": "wait", "seconds": float(item.get("seconds", 1.0))})
+        else:
+            raise ValueError(f"Unbekannte Aktion {idx}: {action}")
+
+    return cleaned
+
+
+def plan_actions_with_llm(goal: str) -> dict[str, Any]:
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").strip().rstrip("/")
+    model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini").strip()
+
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY fehlt.")
+
+    screenshot_image = pyautogui.screenshot()
+    image_buffer = io.BytesIO()
+    screenshot_image.save(image_buffer, format="PNG")
+    image_b64 = base64.b64encode(image_buffer.getvalue()).decode("utf-8")
+    image_url = f"data:image/png;base64,{image_b64}"
+
+    body = {
+        "model": model,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "Du bist ein Desktop-Automationsplaner. Nutze den Screenshot als Kontext "
+                    "und gib NUR JSON zurück."
+                ),
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": (
+                            "Erstelle einen kurzen Plan und konkrete UI-Aktionen, um folgendes Ziel zu erreichen:\n"
+                            f"{goal}\n\n"
+                            "Antworte NUR als JSON mit diesem Schema:\n"
+                            '{'
+                            '"plan_summary": "string",'
+                            '"actions":[{"action":"move","x":0,"y":0}|'
+                            '{"action":"click","button":"left"}|'
+                            '{"action":"doubleclick"}|'
+                            '{"action":"type","text":"..."}|'
+                            '{"action":"hotkey","keys":["command","space"]}|'
+                            '{"action":"wait","seconds":1.0}],'
+                            '"notes":"string"'
+                            "}\n"
+                            "Regeln: maximal 15 Aktionen, nur sichtbare UI verwenden, keine Erklärtexte außerhalb von JSON."
+                        ),
+                    },
+                    {"type": "image_url", "image_url": {"url": image_url}},
+                ],
+            }
+        ],
+    }
+
+    response = requests.post(
+        f"{base_url}/chat/completions",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        json=body,
+        timeout=60,
+    )
+    response.raise_for_status()
+    data = response.json()
+
+    content = ""
+    choices = data.get("choices", [])
+    if choices:
+        content = choices[0].get("message", {}).get("content", "")
+
+    json_text = content.strip()
+    if "```" in json_text:
+        start = json_text.find("{")
+        end = json_text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            json_text = json_text[start : end + 1]
+
+    parsed = json.loads(json_text)
+    cleaned_actions = sanitize_actions(parsed.get("actions"))
+
+    return {
+        "model": model,
+        "plan_summary": str(parsed.get("plan_summary", "")).strip(),
+        "notes": str(parsed.get("notes", "")).strip(),
+        "actions": cleaned_actions,
+        "usage": data.get("usage"),
+    }
+
+
+def actions_to_instructions(actions: list[dict[str, Any]]) -> str:
+    lines: list[str] = []
+    for action in actions:
+        kind = action["action"]
+        if kind == "move":
+            lines.append(f"move {action['x']} {action['y']}")
+        elif kind == "click":
+            button = action.get("button", "left")
+            lines.append("click" if button == "left" else f"click {button}")
+        elif kind == "doubleclick":
+            lines.append("doubleclick")
+        elif kind == "type":
+            lines.append(f"type {action['text']}")
+        elif kind == "hotkey":
+            lines.append(f"hotkey {' '.join(action['keys'])}")
+        elif kind == "wait":
+            lines.append(f"wait {action['seconds']}")
+    return "\n".join(lines)
+
+
 @app.get("/")
 def index() -> str:
     start_background_services()
@@ -340,6 +490,56 @@ def inspect_screen() -> Any:
 
     push_debug_event("inspect_screen_ok", model=result["model"])
     return jsonify({"ok": True, **result})
+
+
+@app.post("/plan-and-run")
+def plan_and_run() -> Any:
+    start_background_services()
+    payload = request.get_json(silent=True) or {}
+    goal = payload.get("goal", "")
+    auto_execute = bool(payload.get("auto_execute", True))
+
+    if not isinstance(goal, str) or not goal.strip():
+        return jsonify({"ok": False, "error": "Ziel darf nicht leer sein."}), 400
+
+    try:
+        result = plan_actions_with_llm(goal.strip())
+    except ValueError as exc:
+        push_debug_event("plan_and_run_validation_error", error=str(exc))
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except requests.RequestException as exc:
+        push_debug_event("plan_and_run_request_error", error=str(exc))
+        return jsonify({"ok": False, "error": f"LLM-Aufruf fehlgeschlagen: {exc}"}), 502
+    except json.JSONDecodeError as exc:
+        push_debug_event("plan_and_run_json_error", error=str(exc))
+        return jsonify({"ok": False, "error": f"LLM-Antwort war kein valides JSON: {exc}"}), 502
+    except Exception as exc:
+        push_debug_event("plan_and_run_error", error=str(exc))
+        return jsonify({"ok": False, "error": f"Interner Fehler: {exc}"}), 500
+
+    accepted_actions = 0
+    if auto_execute:
+        command_queue.put(result["actions"])
+        with state_lock:
+            state.queue_size = command_queue.qsize()
+        accepted_actions = len(result["actions"])
+
+    push_debug_event(
+        "plan_and_run_ok",
+        model=result["model"],
+        accepted_actions=accepted_actions,
+        auto_execute=auto_execute,
+    )
+    return jsonify(
+        {
+            "ok": True,
+            "goal": goal.strip(),
+            "auto_execute": auto_execute,
+            "accepted_actions": accepted_actions,
+            "instructions": actions_to_instructions(result["actions"]),
+            **result,
+        }
+    )
 
 
 if __name__ == "__main__":
