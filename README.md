@@ -5,6 +5,8 @@ Kleiner Python-Prototyp, um einen macOS-Desktop per Skript über eine Weboberfl�
 ## Features
 
 - Weboberfläche zum Einreichen von Aufträgen
+- Zielbasierte Steuerung: Nutzer beschreibt eine Aufgabe in natürlicher Sprache, das LLM plant Aktionen und kann sie direkt ausführen
+- Screenshot-Analyse via Vision-LLM als Kontext für den nächsten Automationsplan
 - Hintergrund-Worker für die Abarbeitung von Befehlen
 - Sicherheits-Interlock: Wenn die Maus manuell bewegt wird, pausiert die Automatisierung **15 Sekunden**
 - Status-Endpoint für Live-Anzeige
@@ -98,5 +100,35 @@ Response (gekürzt):
   "model": "gpt-4.1-mini",
   "analysis": "Ich sehe ...",
   "usage": { "prompt_tokens": 123, "completion_tokens": 45, "total_tokens": 168 }
+}
+```
+
+### `POST /plan-and-run`
+
+Nimmt ein natürlichsprachiges Ziel, macht einen aktuellen Screenshot, lässt ein LLM daraus einen Aktionsplan erzeugen und kann die Aktionen direkt in die Queue legen.
+
+Request:
+
+```json
+{
+  "goal": "Öffne Notizen und erstelle eine neue Notiz mit dem Titel Einkaufsliste.",
+  "auto_execute": true
+}
+```
+
+Response (gekürzt):
+
+```json
+{
+  "ok": true,
+  "goal": "Öffne Notizen und erstelle eine neue Notiz mit dem Titel Einkaufsliste.",
+  "auto_execute": true,
+  "accepted_actions": 6,
+  "plan_summary": "...",
+  "actions": [
+    { "action": "hotkey", "keys": ["command", "space"] },
+    { "action": "type", "text": "Notizen" }
+  ],
+  "instructions": "hotkey command space\ntype Notizen"
 }
 ```

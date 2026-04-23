@@ -14,8 +14,13 @@
 
       textarea {
         width: 100%;
-        min-height: 280px;
+        min-height: 180px;
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+
+      #goal {
+        width: 100%;
+        min-height: 96px;
       }
 
       .status {
@@ -38,6 +43,18 @@
   </head>
   <body>
     <h1>Mac Autopilot</h1>
+    <p>
+      <strong>Neuer Modus:</strong> Gib ein Ziel ein. Das LLM analysiert per Screenshot den
+      aktuellen Bildschirm, erstellt einen Plan und führt die Aktionen automatisch aus.
+    </p>
+
+    <h3>Zielbasierte Steuerung (LLM + Screenshot)</h3>
+    <textarea id="goal" placeholder="Beispiel: Öffne Notizen und erstelle eine neue Notiz mit dem Titel Einkaufsliste."></textarea>
+    <br />
+    <button id="planRunBtn">Ziel planen & ausführen</button>
+
+    <hr />
+    <h3>Manuelle Steuerung (direkte Befehle)</h3>
     <p>
       Steuerungssprache (eine Aktion pro Zeile):
       <code>move x y</code>, <code>click [left|right]</code>, <code>doubleclick</code>,
@@ -122,7 +139,7 @@ click
         loadStatus();
       }
 
-      async function inspectScreen() {
+    async function inspectScreen() {
         const prompt = document.getElementById("inspectPrompt").value;
         const output = document.getElementById("response");
 
@@ -137,6 +154,19 @@ click
 
       document.getElementById("submitBtn").addEventListener("click", submitInstructions);
       document.getElementById("inspectBtn").addEventListener("click", inspectScreen);
+      document.getElementById("planRunBtn").addEventListener("click", async () => {
+        const goal = document.getElementById("goal").value;
+        const output = document.getElementById("response");
+
+        const res = await fetch("/plan-and-run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ goal, auto_execute: true }),
+        });
+        const data = await res.json();
+        output.textContent = JSON.stringify(data, null, 2);
+        loadStatus();
+      });
       loadStatus();
       setInterval(loadStatus, 1000);
     </script>
