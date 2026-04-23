@@ -60,6 +60,19 @@ pyautogui.FAILSAFE = True
 pyautogui.PAUSE = 0.05
 
 
+def take_screenshot() -> Any:
+    try:
+        return pyautogui.screenshot()
+    except Exception as exc:
+        message = str(exc)
+        if "pyscreeze" in message.lower() or "pillow" in message.lower():
+            raise ValueError(
+                "Screenshot nicht möglich: Bitte Abhängigkeiten aktualisieren "
+                "(pip install --upgrade Pillow pyscreeze)."
+            ) from exc
+        raise
+
+
 def normalize_hotkey_key(key: str) -> str:
     normalized = key.strip().lower()
     aliases = {
@@ -216,7 +229,7 @@ def analyze_screenshot_with_llm(prompt: str) -> dict[str, Any]:
     base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").strip().rstrip("/")
     model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini").strip()
 
-    screenshot_image = pyautogui.screenshot()
+    screenshot_image = take_screenshot()
     image_buffer = io.BytesIO()
     screenshot_image.save(image_buffer, format="PNG")
     image_b64 = base64.b64encode(image_buffer.getvalue()).decode("utf-8")
@@ -311,7 +324,7 @@ def plan_actions_with_llm(goal: str) -> dict[str, Any]:
     if not api_key:
         raise ValueError("OPENAI_API_KEY fehlt.")
 
-    screenshot_image = pyautogui.screenshot()
+    screenshot_image = take_screenshot()
     image_buffer = io.BytesIO()
     screenshot_image.save(image_buffer, format="PNG")
     image_b64 = base64.b64encode(image_buffer.getvalue()).decode("utf-8")

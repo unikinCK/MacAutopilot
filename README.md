@@ -30,6 +30,12 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+Wenn beim Screenshot-Feature ein Fehler zu `pyscreeze`/`Pillow` erscheint, einmal die Umgebung aktualisieren:
+
+```bash
+pip install --upgrade Pillow pyscreeze
+```
+
 ## Start
 
 ```bash

@@ -1,4 +1,7 @@
 Flask==3.1.0
 pyautogui==0.9.54
+pyscreeze==1.0.1
+Pillow==11.2.1
 pynput==1.7.7
 requests==2.32.3
+python-dotenv==1.0.1
