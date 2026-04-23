@@ -40,7 +40,7 @@ pip install --upgrade Pillow pyscreeze
 
 ```bash
 source .venv/bin/activate
-# optional:
+# optional (für viele lokale OpenAI-kompatible Server kann der Key leer bleiben):
 # export OPENAI_API_KEY="..."
 # export OPENAI_BASE_URL="https://api.openai.com/v1"
 # export OPENAI_MODEL="gpt-4.1-mini"
@@ -121,6 +121,18 @@ Request:
   "auto_execute": true
 }
 ```
+
+### OpenAI-kompatible Proxy-Endpunkte
+
+Der Server stellt zusätzlich folgende kompatible Endpunkte bereit und leitet sie an `OPENAI_BASE_URL` weiter:
+
+- `GET /v1/models`
+- `POST /v1/responses`
+- `POST /v1/chat/completions`
+- `POST /v1/completions`
+- `POST /v1/embeddings`
+
+Hinweis: Wenn `OPENAI_API_KEY` gesetzt ist, wird er als `Authorization: Bearer ...` mitgesendet.
 
 Response (gekürzt):
 
